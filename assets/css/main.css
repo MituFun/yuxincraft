@@ -659,6 +659,12 @@ input, select, textarea {
 			width: 100%;
 		}
 
+		img {
+			height: auto;
+			width: auto\9;
+			width: 100%
+		}
+
 		.image img {
 			border-radius: 4px;
 			display: block;
@@ -668,9 +674,9 @@ input, select, textarea {
 			max-width: 40%;
 		}
 
-			.image.left img, .image.right img {
-				width: 100%;
-			}
+		.image.left img, .image.right img {
+			width: 100%;
+		}
 
 		.image.left {
 			float: left;
