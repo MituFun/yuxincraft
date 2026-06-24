@@ -17,9 +17,12 @@
         .player-selector select { padding: 8px 12px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc; min-width: 250px; }
         .player-selector input { padding: 8px 12px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc; min-width: 200px; }
         .stats-section { margin-top: 30px; }
-        .stats-section h2 { background: #ecf0f1; padding: 8px 15px; border-radius: 4px; color: #2c3e50; }
-        .stats-section table { width: 100%; }
-        .stats-section table td, .stats-section table th { padding: 6px 10px; }
+        .stats-section h2 { background: #ecf0f1; padding: 8px 15px; border-radius: 4px; color: #2c3e50; cursor: pointer; user-select: none; margin-bottom: 0; }
+        .stats-section h2:hover { background: #d5dbdb; }
+        .stats-section .content { display: block; padding-top: 10px; }
+        .stats-section .content.collapsed { display: none; }
+        .stats-section .content table { width: 100%; }
+        .stats-section .content table td, .stats-section .content table th { padding: 6px 10px; }
         .dataTables_wrapper .dataTables_filter { float: right; }
         .no-data { color: #7f8c8d; font-style: italic; }
         .rank-section { margin-top: 40px; border-top: 2px solid #3498db; padding-top: 20px; }
@@ -31,6 +34,7 @@
         #rankTable { width: 100%; }
         #rankTable th, #rankTable td { padding: 6px 10px; }
         .rank-table-wrapper { overflow-x: auto; }
+        .toggle-icon { float: right; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -159,13 +163,17 @@ const keyTranslations = {
 
 // ---------- 格式化函数 ----------
 function formatValue(key, value) {
-    if (key === 'play_time' || key === 'total_world_time' || key === 'time_since_death' || key === 'time_since_rest') {
+    let cleanKey = key;
+    if (cleanKey.startsWith('minecraft:')) {
+        cleanKey = cleanKey.substring(10);
+    }
+    if (cleanKey === 'play_time' || cleanKey === 'total_world_time' || cleanKey === 'time_since_death' || cleanKey === 'time_since_rest') {
         return formatTime(value);
     }
-    if (key.endsWith('_cm')) {
+    if (cleanKey.endsWith('_cm')) {
         return formatDistance(value);
     }
-    if (key === 'sneak_time') {
+    if (cleanKey === 'sneak_time') {
         return Math.round(value / 20) + ' 秒';
     }
     return value.toLocaleString();
@@ -198,14 +206,14 @@ function formatDistance(cm) {
 
 // ---------- 键名翻译 ----------
 function translateKey(key) {
-    if (keyTranslations[key]) {
-        return keyTranslations[key];
+    let cleanKey = key;
+    if (cleanKey.startsWith('minecraft:')) {
+        cleanKey = cleanKey.substring(10);
     }
-    let cleaned = key;
-    if (cleaned.startsWith('minecraft:')) {
-        cleaned = cleaned.substring(10);
+    if (keyTranslations[cleanKey]) {
+        return keyTranslations[cleanKey];
     }
-    const words = cleaned.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1));
+    const words = cleanKey.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1));
     return words.join(' ');
 }
 
@@ -283,7 +291,7 @@ function initPlayerSelector() {
     });
 }
 
-// ---------- 渲染玩家统计详情 ----------
+// ---------- 渲染玩家统计详情（折叠功能使用 class 控制） ----------
 function renderPlayerStats(player) {
     const container = document.getElementById('statsContainer');
     const stats = player.stats;
@@ -291,41 +299,59 @@ function renderPlayerStats(player) {
 
     for (const [catKey, catLabel] of Object.entries(categoryNames)) {
         const items = getCategoryData(stats, catKey);
+        html += `<div class="stats-section">`;
+        html += `<h2>${catLabel} <span class="toggle-icon">▶</span></h2>`;
+        html += `<div class="content collapsed">`;  // 默认折叠
         if (items.length === 0) {
-            html += `<div class="stats-section"><h2>${catLabel}</h2><p class="no-data">无数据</p></div>`;
-            continue;
+            html += `<p class="no-data">无数据</p>`;
+        } else {
+            html += `<table class="display compact" style="width:100%"><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody>`;
+            for (const item of items) {
+                const displayKey = translateKey(item.key);
+                const displayValue = formatValue(item.key, item.value);
+                html += `<tr><td>${displayKey}</td><td data-order="${item.value}">${displayValue}</td></tr>`;
+            }
+            html += `</tbody></table>`;
         }
-        html += `<div class="stats-section"><h2>${catLabel}</h2>`;
-        html += `<table class="display compact" style="width:100%"><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody>`;
-        for (const item of items) {
-            const displayKey = translateKey(item.key);
-            const displayValue = formatValue(item.key, item.value);
-            html += `<tr><td>${displayKey}</td><td>${displayValue}</td></tr>`;
-        }
-        html += `</tbody></table></div>`;
+        html += `</div></div>`;
     }
 
     container.innerHTML = html;
 
-    // 先销毁所有旧 DataTables 实例
-    const tables = container.querySelectorAll('table');
-    tables.forEach(table => {
+    // 绑定折叠事件
+    container.querySelectorAll('.stats-section h2').forEach(h2 => {
+        h2.addEventListener('click', function() {
+            const content = this.parentElement.querySelector('.content');
+            if (content) {
+                content.classList.toggle('collapsed');
+                const icon = this.querySelector('.toggle-icon');
+                if (content.classList.contains('collapsed')) {
+                    icon.textContent = '▶';
+                } else {
+                    icon.textContent = '▼';
+                }
+            }
+        });
+    });
+
+    // 初始化 DataTables
+    container.querySelectorAll('.stats-section table').forEach(table => {
         if ($.fn.DataTable.isDataTable(table)) {
             $(table).DataTable().destroy();
         }
     });
-
-    // 重新初始化
-    $(tables).DataTable({
-        paging: false,
-        searching: true,
-        info: false,
-        order: [[1, 'desc']],
-        language: { search: "搜索：" }
+    container.querySelectorAll('.stats-section table').forEach(table => {
+        $(table).DataTable({
+            paging: false,
+            searching: true,
+            info: false,
+            order: [[1, 'desc']],
+            language: { search: "搜索：" }
+        });
     });
 }
 
-// ---------- 全服排行（修复版） ----------
+// ---------- 全服排行 ----------
 function initRanking() {
     const categorySelect = document.getElementById('rankCategory');
     const itemSelect = document.getElementById('rankItem');
@@ -351,11 +377,9 @@ function initRanking() {
         const category = categorySelect.value;
         const item = itemSelect.value;
         if (!category) return;
-        console.log('更新排行：分类=' + category + ', 项目=' + item); // 调试输出
         updateRankTable(category, item);
     });
 
-    // 自动加载默认排行
     setTimeout(() => {
         if (sortedCats.length > 0 && itemSelect.options.length > 0) {
             updateRankTable(sortedCats[0], itemSelect.value);
@@ -382,12 +406,10 @@ function populateItemSelect(category) {
 
 function updateRankTable(category, item) {
     const table = $('#rankTable');
-    // 先销毁旧实例（避免冲突）
     if ($.fn.DataTable.isDataTable(table)) {
         table.DataTable().destroy();
     }
 
-    // 重新填充 tbody
     const tbody = document.querySelector('#rankTable tbody');
     const rows = [];
     for (const p of playersData) {
@@ -413,19 +435,22 @@ function updateRankTable(category, item) {
             displayVal = formatValue(item, r.value);
         }
         tdVal.textContent = displayVal;
+        tdVal.setAttribute('data-order', r.value);
         tr.appendChild(tdName);
         tr.appendChild(tdVal);
         tbody.appendChild(tr);
     }
 
-    // 重新初始化 DataTables
     table.DataTable({
         paging: true,
         pageLength: 20,
         searching: true,
         info: true,
         order: [[1, 'desc']],
-        language: { search: "搜索：" }
+        language: { search: "搜索：" },
+        columnDefs: [
+            { type: 'num', targets: 1 }
+        ]
     });
 }
 
